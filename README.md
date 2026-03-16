@@ -1,150 +1,314 @@
-# AI Utility Anomaly Detection
+# AI Utility Anomaly Detection System
 
-An end-to-end AI system for detecting abnormal consumption patterns in large-scale utility meter datasets using automated data pipelines, machine learning, and explainable AI.
-
-This project demonstrates a production-style machine learning pipeline combining data engineering, anomaly detection, and automated analytics.
+Production-style end-to-end Machine Learning pipeline for detecting anomalous consumption patterns in utility datasets using unsupervised learning, explainable AI, and automated alert generation.
 
 ---
 
-# Overview
+# Executive Summary
 
-Utility companies manage millions of meter readings across multiple regions. Detecting anomalies in consumption data is essential for identifying:
+This project implements a real-world Artificial Intelligence solution for utility analytics, designed to identify abnormal consumption behavior across large-scale infrastructure systems.
 
-- potential fraud
-- meter malfunction
-- abnormal consumption patterns
-- operational incidents
-
-This project implements an AI-driven monitoring system capable of automatically identifying anomalies in utility consumption data.
+The system combines data engineering, machine learning, and explainability techniques to deliver actionable insights for operational monitoring, fraud detection, and risk mitigation.
 
 ---
 
-# Architecture
+# Problem Statement
 
-Pipeline workflow:
+Utility companies (water, energy, gas) must continuously monitor consumption data from thousands or millions of assets.
 
-Data Sources  
-↓  
-Automated Data Ingestion  
-↓  
-Data Cleaning & Validation  
-↓  
-Feature Engineering  
-↓  
-Machine Learning Model  
-↓  
-Anomaly Detection  
-↓  
-Explainable AI  
-↓  
-Alert Generation  
-↓  
-Visualization Dashboard  
+Key challenges include:
+
+* Detecting abnormal consumption patterns
+* Identifying fraud or leaks
+* Handling noisy and incomplete time-series data
+* Generating interpretable insights for decision-making
+
+This project addresses these challenges with an automated AI-driven pipeline.
 
 ---
 
-# System Components
+# Solution Overview
 
-## 1 Data Ingestion
+The system performs:
 
-The pipeline automatically collects data from structured datasets such as:
-
-- parquet files
-- data lakes
-- SQL databases
-- API endpoints
-
-The ingestion layer consolidates all raw datasets into a unified dataframe for processing.
-
----
-
-## 2 Data Cleaning
-
-Data validation and preprocessing include:
-
-- timestamp normalization
-- missing value handling
-- duplicate removal
-- schema validation
-
-These steps ensure consistent data quality for downstream ML models.
+* Automated ingestion of raw consumption data
+* Data cleaning and time-series structuring
+* Feature engineering based on historical behavior
+* Unsupervised anomaly detection using Isolation Forest
+* Explainability using SHAP
+* Alert prioritization based on feature importance
+* Human-readable reasoning generation
+* Interactive visualization via dashboard
 
 ---
 
-## 3 Feature Engineering
+# System Architecture
 
-Key engineered features include:
-
-| Feature | Description |
-|------|------|
-rolling_avg_6m | 6-month rolling average consumption |
-consumption_ratio | consumption deviation from historical mean |
-events_last_6m | anomaly events recorded in the last 6 months |
-seasonality_index | consumption pattern variation |
-
-These features capture temporal and behavioral patterns of utility usage.
+```
+                ┌────────────────────┐
+                │   Raw Data (IoT)   │
+                └─────────┬──────────┘
+                          │
+                          ▼
+                ┌────────────────────┐
+                │ Data Ingestion     │
+                └─────────┬──────────┘
+                          │
+                          ▼
+                ┌────────────────────┐
+                │ Data Cleaning      │
+                └─────────┬──────────┘
+                          │
+                          ▼
+                ┌────────────────────┐
+                │ Feature Engineering│
+                └─────────┬──────────┘
+                          │
+                          ▼
+                ┌────────────────────┐
+                │ ML Model           │
+                │ (Isolation Forest) │
+                └─────────┬──────────┘
+                          │
+                          ▼
+                ┌────────────────────┐
+                │ Explainability     │
+                │ (SHAP)             │
+                └─────────┬──────────┘
+                          │
+                          ▼
+                ┌────────────────────┐
+                │ Alert Engine       │
+                └─────────┬──────────┘
+                          │
+                          ▼
+                ┌────────────────────┐
+                │ Dashboard          │
+                │ (Streamlit)        │
+                └────────────────────┘
+```
 
 ---
 
-## 4 Machine Learning Model
+# Key Features
 
-The anomaly detection model uses **Isolation Forest**, an unsupervised algorithm designed to identify rare patterns in large datasets.
+* End-to-end ML pipeline in a single executable file
+* Time-series feature engineering
+* Unsupervised anomaly detection (no labels required)
+* Explainable AI (per-row feature importance)
+* Business-oriented reasoning layer
+* Automated alert ranking system
+* Interactive dashboard for analysis
 
-Advantages:
+---
 
-- scalable for large datasets
-- robust to noise
-- effective for anomaly detection without labeled data
+# Tech Stack
 
-Model features:
+| Layer            | Technology    |
+| ---------------- | ------------- |
+| Language         | Python        |
+| Data Processing  | Pandas, NumPy |
+| Machine Learning | Scikit-learn  |
+| Explainability   | SHAP          |
+| Visualization    | Streamlit     |
+| Storage          | Parquet       |
 
-- rolling_avg_6m
-- consumption_ratio
-- events_last_6m
+---
+
+# Machine Learning Approach
+
+## Model
+
+Isolation Forest is used for anomaly detection due to its efficiency and scalability in high-dimensional datasets.
+
+```
+IsolationForest(contamination=0.02)
+```
+
+## Features Used
+
+* Rolling average consumption (6 months)
+* Consumption ratio (current vs historical)
+* Event frequency (last 6 months)
+
+## Why Unsupervised Learning?
+
+* No labeled anomaly data required
+* Works well with real-world noisy datasets
+* Scalable to large systems
+
+---
+
+# Explainable AI
+
+The system integrates SHAP to provide local interpretability.
+
+Each prediction includes:
+
+* Feature importance scores
+* Contribution of each variable to anomaly detection
+
+This enables:
+
+* Trust in model outputs
+* Better debugging and validation
+* Business interpretability
+
+---
+
+# Alert System
+
+Anomalies are:
+
+1. Filtered
+2. Ranked by importance
+3. Enriched with explanations
+
+Example reasoning:
+
+* Sudden consumption drop
+* Multiple anomaly events
+* Insufficient consumption history
 
 Output:
 
-- anomaly classification
-- anomaly score
-
----
-
-## 5 Explainable AI
-
-To improve model transparency, the pipeline integrates **SHAP (SHapley Additive Explanations)**.
-
-Explainability allows analysts to understand:
-
-- which variables influenced anomaly detection
-- how consumption patterns deviated from historical norms
-
-This is critical for operational decision-making.
-
----
-
-## 6 Automated Alert Generation
-
-Detected anomalies trigger automated alerts including:
-
-- affected asset ID
-- anomaly score
-- potential root causes
-
-These alerts can be integrated into operational monitoring systems.
-
----
-
-## 7 Visualization Dashboard
-
-A lightweight dashboard built with Streamlit enables analysts to:
-
-- view detected anomalies
-- inspect feature values
-- explore consumption patterns
-
-This interface allows quick investigation of flagged records.
+```
+data/output/anomaly_alerts.parquet
+```
 
 ---
 
 # Project Structure
 
+```
+ai-utility-anomaly-detection
+
+pipeline.py
+requirements.txt
+README.md
+LICENSE
+.gitignore
+
+data/
+ ├ input/
+ └ output/
+```
+
+---
+
+# Installation
+
+Clone the repository:
+
+```
+git clone <your-repo-url>
+cd ai-utility-anomaly-detection
+```
+
+Install dependencies:
+
+```
+pip install -r requirements.txt
+```
+
+---
+
+# Usage
+
+## 1. Add Input Data
+
+Place parquet files inside:
+
+```
+data/input/
+```
+
+## 2. Run Pipeline
+
+```
+python pipeline.py
+```
+
+## 3. Launch Dashboard
+
+```
+streamlit run pipeline.py
+```
+
+---
+
+# Output
+
+The system generates:
+
+* Anomaly classification
+* Feature importance metrics
+* AI-generated explanations
+* Structured alert dataset
+
+---
+
+# Use Cases
+
+* Utility monitoring (water, gas, electricity)
+* Fraud detection
+* Leak detection
+* Industrial IoT analytics
+* Smart city infrastructure
+
+---
+
+# Limitations
+
+* Assumes availability of historical data
+* Sensitive to feature engineering quality
+* Isolation Forest may require tuning for different datasets
+
+---
+
+# Future Improvements
+
+* Deep learning models (Autoencoders, LSTM)
+* Real-time streaming (Kafka, Spark)
+* REST API deployment (FastAPI)
+* Cloud-native architecture
+* MLOps pipeline (CI/CD, monitoring)
+
+---
+
+# Author
+
+Michael Santos
+
+---
+
+# License
+
+MIT License
+
+---
+
+# Portfolio Value
+
+This project demonstrates:
+
+* Machine Learning Engineering
+* Data Pipeline Design
+* Explainable AI
+* Business-oriented AI systems
+* End-to-end project ownership
+
+Suitable for roles such as:
+
+* Machine Learning Engineer
+* Data Scientist
+* AI Engineer
+* Data Analyst (Advanced)
+
+---
+
+# Final Remarks
+
+This repository is designed to reflect a real-world production scenario, focusing not only on model performance but also on interpretability, usability, and business value.
+
+It showcases the ability to build complete AI systems rather than isolated models.
