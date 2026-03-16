@@ -1,81 +1,166 @@
 import pandas as pd
 import numpy as np
-from pathlib import Path
 from glob import glob
 import datetime as dt
+from sklearn.ensemble import IsolationForest
+import shap
+import streamlit as st
 
-start_time = dt.datetime.now()
+# ------------------------------------
+# 1 DATA INGESTION
+# ------------------------------------
 
-DATA_PATH = "data/input/meter_readings/"
-OUTPUT_PATH = "data/output/region_readings/"
+DATA_PATH = "data/input/*.parquet"
 
-columns_required = [
-    "asset_id",
-    "reading_datetime",
-    "water_consumption",
-    "event_code"
+files = glob(DATA_PATH)
+
+dfs = [pd.read_parquet(f) for f in files]
+
+df_raw = pd.concat(dfs, ignore_index=True)
+
+print("Raw data shape:", df_raw.shape)
+
+# ------------------------------------
+# 2 DATA CLEANING
+# ------------------------------------
+
+df_raw["reading_datetime"] = pd.to_datetime(
+    df_raw["reading_datetime"],
+    errors="coerce"
+)
+
+df = df_raw.dropna(subset=["reading_datetime"])
+
+df = df.sort_values(["asset_id", "reading_datetime"])
+
+# ------------------------------------
+# 3 FEATURE ENGINEERING
+# ------------------------------------
+
+df["year_month"] = df["reading_datetime"].dt.to_period("M")
+
+df = df.drop_duplicates(
+    subset=["asset_id", "year_month"],
+    keep="last"
+)
+
+# rolling average consumption
+df["rolling_avg_6m"] = (
+    df.groupby("asset_id")["water_consumption"]
+    .rolling(6)
+    .mean()
+    .reset_index(level=0, drop=True)
+)
+
+# consumption ratio
+df["consumption_ratio"] = (
+    df["water_consumption"] / df["rolling_avg_6m"]
+)
+
+# count events
+df["event_flag"] = df["event_code"].notna().astype(int)
+
+df["events_last_6m"] = (
+    df.groupby("asset_id")["event_flag"]
+    .rolling(6)
+    .sum()
+    .reset_index(level=0, drop=True)
+)
+
+# fill missing values
+df = df.fillna(0)
+
+# ------------------------------------
+# 4 MACHINE LEARNING MODEL
+# ------------------------------------
+
+features = [
+    "rolling_avg_6m",
+    "consumption_ratio",
+    "events_last_6m"
 ]
 
-files = glob(f"{DATA_PATH}/*.parquet")
+X = df[features]
 
-def prepare_and_count(df: pd.DataFrame):
+model = IsolationForest(
+    contamination=0.02,
+    random_state=42
+)
 
-    df = df.copy()
+df["anomaly_score"] = model.fit_predict(X)
 
-    # convert datetime
-    df["reading_datetime"] = pd.to_datetime(
-        df["reading_datetime"], errors="coerce"
-    )
+df["anomaly_flag"] = df["anomaly_score"].apply(
+    lambda x: "anomaly" if x == -1 else "normal"
+)
 
-    df = df.dropna(subset=["reading_datetime"])
+print(df["anomaly_flag"].value_counts())
 
-    # monthly aggregation
-    df["year_month"] = df["reading_datetime"].dt.to_period("M")
+# ------------------------------------
+# 5 EXPLAINABLE AI
+# ------------------------------------
 
-    df = df.sort_values(["asset_id", "reading_datetime"])
+explainer = shap.TreeExplainer(model)
 
-    df_dedup = df.drop_duplicates(
-        subset=["asset_id", "year_month"],
-        keep="last"
-    )
+shap_values = explainer.shap_values(X)
 
-    # rolling consumption average (6 months)
-    df_dedup["consumption_avg_6m"] = (
-        df_dedup.groupby("asset_id")["water_consumption"]
-        .rolling(window=6, min_periods=6)
-        .mean()
-        .reset_index(level=0, drop=True)
-    )
+df["feature_importance"] = np.abs(shap_values).mean(axis=1)
 
-    # time window
-    ref = pd.Timestamp.today()
-    start = ref - pd.DateOffset(months=6)
+# ------------------------------------
+# 6 ALERT GENERATION
+# ------------------------------------
 
-    df_window = df_dedup[
-        (df_dedup["reading_datetime"] >= start)
-        & (df_dedup["reading_datetime"] <= ref)
-    ]
+alerts = df[df["anomaly_flag"] == "anomaly"]
 
-    counts = (
-        df_window.groupby("asset_id")
-        .size()
-        .reset_index(name="events_last_6m")
-    )
+alerts = alerts.sort_values("feature_importance", ascending=False)
 
-    return counts
+alerts.to_parquet("data/output/anomaly_alerts.parquet")
+
+print("Alerts generated:", len(alerts))
+
+# ------------------------------------
+# 7 AI REASONING OUTPUT
+# ------------------------------------
+
+def generate_reason(row):
+
+    reasons = []
+
+    if row["consumption_ratio"] < 0.5:
+        reasons.append("sudden consumption drop")
+
+    if row["events_last_6m"] > 2:
+        reasons.append("multiple anomaly events")
+
+    if row["rolling_avg_6m"] == 0:
+        reasons.append("insufficient consumption history")
+
+    return ", ".join(reasons)
 
 
-dfs = []
+alerts["ai_reason"] = alerts.apply(generate_reason, axis=1)
 
-for file in files:
-    df = pd.read_parquet(file, columns=columns_required)
-    df_counts = prepare_and_count(df)
-    dfs.append(df_counts)
+# ------------------------------------
+# 8 DASHBOARD (STREAMLIT)
+# ------------------------------------
 
-df_final = pd.concat(dfs)
+def run_dashboard():
 
-df_final.to_parquet("data/output/events_summary.parquet")
+    st.title("AI Utility Anomaly Detection")
 
-end_time = dt.datetime.now()
+    st.write("Detected anomalies:")
 
-print("Execution time:", end_time - start_time)
+    st.dataframe(alerts[
+        [
+            "asset_id",
+            "rolling_avg_6m",
+            "consumption_ratio",
+            "events_last_6m",
+            "ai_reason"
+        ]
+    ])
+
+if __name__ == "__main__":
+
+    print("Pipeline executed at:", dt.datetime.now())
+
+    run_dashboard()
