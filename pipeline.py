@@ -5,6 +5,7 @@ import datetime as dt
 from sklearn.ensemble import IsolationForest
 import shap
 import streamlit as st
+import os
 
 # ------------------------------------
 # 1 DATA INGESTION
@@ -13,6 +14,9 @@ import streamlit as st
 DATA_PATH = "data/input/*.parquet"
 
 files = glob(DATA_PATH)
+
+if len(files) == 0:
+    raise Exception("No input files found in data/input")
 
 dfs = [pd.read_parquet(f) for f in files]
 
@@ -44,7 +48,6 @@ df = df.drop_duplicates(
     keep="last"
 )
 
-# rolling average consumption
 df["rolling_avg_6m"] = (
     df.groupby("asset_id")["water_consumption"]
     .rolling(6)
@@ -52,12 +55,10 @@ df["rolling_avg_6m"] = (
     .reset_index(level=0, drop=True)
 )
 
-# consumption ratio
 df["consumption_ratio"] = (
     df["water_consumption"] / df["rolling_avg_6m"]
 )
 
-# count events
 df["event_flag"] = df["event_code"].notna().astype(int)
 
 df["events_last_6m"] = (
@@ -67,7 +68,6 @@ df["events_last_6m"] = (
     .reset_index(level=0, drop=True)
 )
 
-# fill missing values
 df = df.fillna(0)
 
 # ------------------------------------
@@ -99,11 +99,11 @@ print(df["anomaly_flag"].value_counts())
 # 5 EXPLAINABLE AI
 # ------------------------------------
 
-explainer = shap.TreeExplainer(model)
+explainer = shap.Explainer(model, X)
 
-shap_values = explainer.shap_values(X)
+shap_values = explainer(X)
 
-df["feature_importance"] = np.abs(shap_values).mean(axis=1)
+df["feature_importance"] = np.abs(shap_values.values).mean(axis=1)
 
 # ------------------------------------
 # 6 ALERT GENERATION
@@ -112,6 +112,8 @@ df["feature_importance"] = np.abs(shap_values).mean(axis=1)
 alerts = df[df["anomaly_flag"] == "anomaly"]
 
 alerts = alerts.sort_values("feature_importance", ascending=False)
+
+os.makedirs("data/output", exist_ok=True)
 
 alerts.to_parquet("data/output/anomaly_alerts.parquet")
 
@@ -140,7 +142,7 @@ def generate_reason(row):
 alerts["ai_reason"] = alerts.apply(generate_reason, axis=1)
 
 # ------------------------------------
-# 8 DASHBOARD (STREAMLIT)
+# 8 DASHBOARD
 # ------------------------------------
 
 def run_dashboard():
@@ -149,15 +151,21 @@ def run_dashboard():
 
     st.write("Detected anomalies:")
 
-    st.dataframe(alerts[
-        [
-            "asset_id",
-            "rolling_avg_6m",
-            "consumption_ratio",
-            "events_last_6m",
-            "ai_reason"
+    st.dataframe(
+        alerts[
+            [
+                "asset_id",
+                "rolling_avg_6m",
+                "consumption_ratio",
+                "events_last_6m",
+                "ai_reason"
+            ]
         ]
-    ])
+    )
+
+# ------------------------------------
+# MAIN
+# ------------------------------------
 
 if __name__ == "__main__":
 
