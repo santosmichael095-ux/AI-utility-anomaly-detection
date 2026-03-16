@@ -1,0 +1,81 @@
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from glob import glob
+import datetime as dt
+
+start_time = dt.datetime.now()
+
+DATA_PATH = "data/input/meter_readings/"
+OUTPUT_PATH = "data/output/region_readings/"
+
+columns_required = [
+    "asset_id",
+    "reading_datetime",
+    "water_consumption",
+    "event_code"
+]
+
+files = glob(f"{DATA_PATH}/*.parquet")
+
+def prepare_and_count(df: pd.DataFrame):
+
+    df = df.copy()
+
+    # convert datetime
+    df["reading_datetime"] = pd.to_datetime(
+        df["reading_datetime"], errors="coerce"
+    )
+
+    df = df.dropna(subset=["reading_datetime"])
+
+    # monthly aggregation
+    df["year_month"] = df["reading_datetime"].dt.to_period("M")
+
+    df = df.sort_values(["asset_id", "reading_datetime"])
+
+    df_dedup = df.drop_duplicates(
+        subset=["asset_id", "year_month"],
+        keep="last"
+    )
+
+    # rolling consumption average (6 months)
+    df_dedup["consumption_avg_6m"] = (
+        df_dedup.groupby("asset_id")["water_consumption"]
+        .rolling(window=6, min_periods=6)
+        .mean()
+        .reset_index(level=0, drop=True)
+    )
+
+    # time window
+    ref = pd.Timestamp.today()
+    start = ref - pd.DateOffset(months=6)
+
+    df_window = df_dedup[
+        (df_dedup["reading_datetime"] >= start)
+        & (df_dedup["reading_datetime"] <= ref)
+    ]
+
+    counts = (
+        df_window.groupby("asset_id")
+        .size()
+        .reset_index(name="events_last_6m")
+    )
+
+    return counts
+
+
+dfs = []
+
+for file in files:
+    df = pd.read_parquet(file, columns=columns_required)
+    df_counts = prepare_and_count(df)
+    dfs.append(df_counts)
+
+df_final = pd.concat(dfs)
+
+df_final.to_parquet("data/output/events_summary.parquet")
+
+end_time = dt.datetime.now()
+
+print("Execution time:", end_time - start_time)
