@@ -6,6 +6,21 @@ from sklearn.ensemble import IsolationForest
 import shap
 import streamlit as st
 import os
+import hashlib
+
+# ------------------------------------
+# CONFIG (SECURITY)
+# ------------------------------------
+
+HASH_SALT = os.getenv("HASH_SALT", "default_salt_change_me")
+
+
+def hash_id(value):
+    """Hash sensitive identifiers using SHA-256 with salt."""
+    if pd.isna(value):
+        return None
+    return hashlib.sha256((str(value) + HASH_SALT).encode()).hexdigest()
+
 
 # ------------------------------------
 # 1 DATA INGESTION
@@ -35,7 +50,13 @@ df_raw["reading_datetime"] = pd.to_datetime(
 
 df = df_raw.dropna(subset=["reading_datetime"])
 
-df = df.sort_values(["asset_id", "reading_datetime"])
+# Hash sensitive identifier
+df["asset_id_hash"] = df["asset_id"].apply(hash_id)
+
+# Remove original identifier
+df = df.drop(columns=["asset_id"])
+
+df = df.sort_values(["asset_id_hash", "reading_datetime"])
 
 # ------------------------------------
 # 3 FEATURE ENGINEERING
@@ -44,12 +65,12 @@ df = df.sort_values(["asset_id", "reading_datetime"])
 df["year_month"] = df["reading_datetime"].dt.to_period("M")
 
 df = df.drop_duplicates(
-    subset=["asset_id", "year_month"],
+    subset=["asset_id_hash", "year_month"],
     keep="last"
 )
 
 df["rolling_avg_6m"] = (
-    df.groupby("asset_id")["water_consumption"]
+    df.groupby("asset_id_hash")["water_consumption"]
     .rolling(6)
     .mean()
     .reset_index(level=0, drop=True)
@@ -62,7 +83,7 @@ df["consumption_ratio"] = (
 df["event_flag"] = df["event_code"].notna().astype(int)
 
 df["events_last_6m"] = (
-    df.groupby("asset_id")["event_flag"]
+    df.groupby("asset_id_hash")["event_flag"]
     .rolling(6)
     .sum()
     .reset_index(level=0, drop=True)
@@ -147,14 +168,14 @@ alerts["ai_reason"] = alerts.apply(generate_reason, axis=1)
 
 def run_dashboard():
 
-    st.title("AI Utility Anomaly Detection")
+    st.title("AI Utility Anomaly Detection (Secure)")
 
-    st.write("Detected anomalies:")
+    st.write("Detected anomalies (anonymized):")
 
     st.dataframe(
         alerts[
             [
-                "asset_id",
+                "asset_id_hash",
                 "rolling_avg_6m",
                 "consumption_ratio",
                 "events_last_6m",
